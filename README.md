@@ -32,7 +32,7 @@ A private plugin for the TRMNL e-ink display that provides users with at-a-glanc
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/whoop-trmnl-plugin.git
+   git clone https://github.com/sapochat/whoop-trmnl-plugin.git
    cd whoop-trmnl-plugin
    ```
 
