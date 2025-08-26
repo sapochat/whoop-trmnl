@@ -419,7 +419,7 @@ export function generateAuthHtml(authUrl: string): string {
  * @param error - Optional error details
  * @returns HTML string
  */
-export function generateErrorHtml(message: string, error?: any): string {
+export function generateErrorHtml(message: string, error?: unknown): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -518,7 +518,7 @@ export function generateErrorHtml(message: string, error?: any): string {
     
     ${error ? `
     <div class="error-details">
-      ${error.message || JSON.stringify(error)}
+      ${error instanceof Error ? error.message : JSON.stringify(error)}
     </div>
     ` : ''}
     

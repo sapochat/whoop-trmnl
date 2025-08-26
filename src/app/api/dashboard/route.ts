@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getTokenData } from '@/lib/kv';
 import * as whoopApi from '@/lib/whoop/api';
 import { processDashboardData } from '@/lib/whoop/utils';
@@ -12,7 +12,7 @@ const DEFAULT_USER_ID = 'default-user';
  * GET handler for the dashboard endpoint
  * This is the main endpoint that TRMNL will poll
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Get token data from KV store
     const tokenData = await getTokenData(DEFAULT_USER_ID);
@@ -36,7 +36,12 @@ export async function GET(request: NextRequest) {
         const refreshedToken = await whoopApi.refreshAccessToken(tokenData.refreshToken);
         
         // Update token data in KV store
-        await getTokenData(DEFAULT_USER_ID);
+        const { storeTokenData } = await import('@/lib/kv');
+        await storeTokenData(DEFAULT_USER_ID, {
+          accessToken: refreshedToken.access_token,
+          refreshToken: refreshedToken.refresh_token,
+          expiresAt: Date.now() + (refreshedToken.expires_in * 1000)
+        });
         
         // Continue with the refreshed token
         tokenData.accessToken = refreshedToken.access_token;
@@ -57,7 +62,7 @@ export async function GET(request: NextRequest) {
     }
     
     // Fetch data from WHOOP API
-    const { cycleData, recoveryData, hrvData, sleepData } = await whoopApi.getAllDashboardData(tokenData.accessToken);
+    const { recoveryData, hrvData, sleepData } = await whoopApi.getAllDashboardData(tokenData.accessToken);
     
     // Process data for display
     const processedData = processDashboardData(recoveryData, hrvData, sleepData);

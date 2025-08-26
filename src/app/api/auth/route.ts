@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getAuthUrl } from '@/lib/whoop/api';
 
 /**
  * GET handler for the auth endpoint
  * Redirects the user to the WHOOP authorization page
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Generate the authorization URL
     const authUrl = getAuthUrl();
