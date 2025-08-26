@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-// WHOOP API base URL
-const WHOOP_API_BASE_URL = 'https://api.whoop.com/v1';
+// WHOOP API base URL - Using v2 API (v1 will be deprecated after October 1, 2025)
+const WHOOP_API_BASE_URL = 'https://api.whoop.com/v2';
 
 // OAuth configuration
 const CLIENT_ID = process.env.WHOOP_CLIENT_ID;
@@ -19,8 +19,14 @@ export interface TokenResponse {
 }
 
 export interface CycleData {
-  cycle_id: string;
-  [key: string]: any;
+  cycle_id: string; // UUID in v2
+  created_at: string;
+  updated_at: string;
+  start: string;
+  end?: string;
+  timezone: string;
+  score?: RecoveryData;
+  recovery?: RecoveryData;
 }
 
 export interface RecoveryData {
@@ -30,10 +36,12 @@ export interface RecoveryData {
   hrv_rmssd_milli: number;
   spo2_percentage?: number;
   skin_temp_celsius?: number;
-  [key: string]: any;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface SleepData {
+  id: string; // UUID in v2
   score: {
     stage_summary: {
       total_in_bed_time_milli: number;
@@ -41,9 +49,16 @@ export interface SleepData {
       total_wake_time_milli: number;
       sleep_efficiency: number;
       sleep_needed_milli: number;
+      rem_sleep_milli?: number;
+      deep_sleep_milli?: number;
+      light_sleep_milli?: number;
     };
   };
-  [key: string]: any;
+  created_at?: string;
+  updated_at?: string;
+  start?: string;
+  end?: string;
+  nap?: boolean;
 }
 
 export interface HrvDataPoint {
@@ -102,18 +117,31 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
 }
 
 /**
- * Get the latest cycle
+ * Get the latest cycle collection
  * @param {string} accessToken - The access token
  * @returns {Promise<CycleData>} The latest cycle data
  */
 export async function getLatestCycle(accessToken: string): Promise<CycleData> {
   try {
+    // Get cycles from the last 7 days, sorted by start time descending
+    const endDate = new Date().toISOString();
+    const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    
     const response = await axios.get(`${WHOOP_API_BASE_URL}/cycle`, {
       headers: {
         Authorization: `Bearer ${accessToken}`
+      },
+      params: {
+        start: startDate,
+        end: endDate,
+        limit: 1,
+        order: 'desc'
       }
     });
-    return response.data;
+    
+    // Return the first (most recent) cycle
+    const cycles = response.data.records || response.data;
+    return Array.isArray(cycles) ? cycles[0] : cycles;
   } catch (error) {
     console.error('Error getting latest cycle:', error);
     throw error;
@@ -123,17 +151,20 @@ export async function getLatestCycle(accessToken: string): Promise<CycleData> {
 /**
  * Get recovery data for a specific cycle
  * @param {string} accessToken - The access token
- * @param {string} cycleId - The cycle ID
+ * @param {string} cycleId - The cycle ID (UUID in v2)
  * @returns {Promise<RecoveryData>} The recovery data
  */
 export async function getRecoveryForCycle(accessToken: string, cycleId: string): Promise<RecoveryData> {
   try {
-    const response = await axios.get(`${WHOOP_API_BASE_URL}/cycle/${cycleId}/recovery`, {
+    // In v2, recovery data is part of the cycle endpoint response
+    const response = await axios.get(`${WHOOP_API_BASE_URL}/cycle/${cycleId}`, {
       headers: {
         Authorization: `Bearer ${accessToken}`
       }
     });
-    return response.data;
+    
+    // Extract recovery score from the cycle data
+    return response.data.score || response.data.recovery;
   } catch (error) {
     console.error('Error getting recovery for cycle:', error);
     throw error;
@@ -147,19 +178,27 @@ export async function getRecoveryForCycle(accessToken: string, cycleId: string):
  */
 export async function getHistoricalRecoveryData(accessToken: string): Promise<RecoveryData[]> {
   try {
-    const endDate = new Date().toISOString().split('T')[0];
-    const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const endDate = new Date().toISOString();
+    const startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     
-    const response = await axios.get(`${WHOOP_API_BASE_URL}/recovery/collection`, {
+    // In v2, recovery data comes from the cycle collection
+    const response = await axios.get(`${WHOOP_API_BASE_URL}/cycle`, {
       headers: {
         Authorization: `Bearer ${accessToken}`
       },
       params: {
-        start_date: startDate,
-        end_date: endDate
+        start: startDate,
+        end: endDate,
+        limit: 7,
+        order: 'desc'
       }
     });
-    return response.data;
+    
+    // Extract recovery scores from cycles
+    const cycles = response.data.records || response.data;
+    return Array.isArray(cycles) 
+      ? cycles.map(cycle => cycle.score || cycle.recovery).filter(Boolean)
+      : [];
   } catch (error) {
     console.error('Error getting historical recovery data:', error);
     throw error;
@@ -173,15 +212,23 @@ export async function getHistoricalRecoveryData(accessToken: string): Promise<Re
  */
 export async function getSleepData(accessToken: string): Promise<SleepData> {
   try {
-    const response = await axios.get(`${WHOOP_API_BASE_URL}/activity/sleep/collection`, {
+    const endDate = new Date().toISOString();
+    const startDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    
+    const response = await axios.get(`${WHOOP_API_BASE_URL}/sleep`, {
       headers: {
         Authorization: `Bearer ${accessToken}`
       },
       params: {
-        limit: 1
+        start: startDate,
+        end: endDate,
+        limit: 1,
+        order: 'desc'
       }
     });
-    return response.data[0];
+    
+    const sleepData = response.data.records || response.data;
+    return Array.isArray(sleepData) ? sleepData[0] : sleepData;
   } catch (error) {
     console.error('Error getting sleep data:', error);
     throw error;
@@ -195,10 +242,15 @@ export async function getSleepData(accessToken: string): Promise<SleepData> {
  */
 export async function getAllDashboardData(accessToken: string) {
   try {
-    const cycleData = await getLatestCycle(accessToken);
-    const recoveryData = await getRecoveryForCycle(accessToken, cycleData.cycle_id);
-    const hrvData = await getHistoricalRecoveryData(accessToken);
-    const sleepData = await getSleepData(accessToken);
+    // Fetch all data in parallel for better performance
+    const [cycleData, hrvData, sleepData] = await Promise.all([
+      getLatestCycle(accessToken),
+      getHistoricalRecoveryData(accessToken),
+      getSleepData(accessToken)
+    ]);
+    
+    // Recovery data is now part of the cycle data in v2
+    const recoveryData = cycleData?.score || cycleData?.recovery || await getRecoveryForCycle(accessToken, cycleData.cycle_id);
 
     return {
       cycleData,
