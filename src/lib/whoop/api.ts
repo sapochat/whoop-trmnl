@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getCanonicalUrl } from './oauth-state';
 
 // WHOOP API base URL - Using v2 API (v1 will be deprecated after October 1, 2025)
 const WHOOP_API_BASE_URL = 'https://api.whoop.com/v2';
@@ -6,7 +7,6 @@ const WHOOP_API_BASE_URL = 'https://api.whoop.com/v2';
 // OAuth configuration
 const CLIENT_ID = process.env.WHOOP_CLIENT_ID;
 const CLIENT_SECRET = process.env.WHOOP_CLIENT_SECRET;
-const REDIRECT_URI = process.env.NEXTAUTH_URL ? `${process.env.NEXTAUTH_URL}/api/auth/callback` : 'http://localhost:3000/api/auth/callback';
 const AUTH_URL = 'https://api.whoop.com/oauth/authorize';
 const TOKEN_URL = 'https://api.whoop.com/oauth/token';
 
@@ -70,9 +70,18 @@ export interface HrvDataPoint {
  * Generate the OAuth authorization URL
  * @returns {string} The authorization URL
  */
-export function getAuthUrl(): string {
+export function getAuthUrl(state: string, requestUrl: string): string {
   const scopes = ['read:cycles', 'read:recovery', 'read:sleep', 'read:hrv'];
-  return `${AUTH_URL}?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(scopes.join(' '))}`;
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID ?? '',
+    redirect_uri: getCanonicalUrl('/api/auth/callback', requestUrl),
+    response_type: 'code',
+    scope: scopes.join(' '),
+  });
+
+  params.set('state', state);
+
+  return `${AUTH_URL}?${params.toString()}`;
 }
 
 /**
@@ -80,13 +89,13 @@ export function getAuthUrl(): string {
  * @param {string} code - The authorization code
  * @returns {Promise<TokenResponse>} The access token response
  */
-export async function getAccessToken(code: string): Promise<TokenResponse> {
+export async function getAccessToken(code: string, requestUrl: string): Promise<TokenResponse> {
   try {
     const response = await axios.post(TOKEN_URL, {
       client_id: CLIENT_ID,
       client_secret: CLIENT_SECRET,
       code,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: getCanonicalUrl('/api/auth/callback', requestUrl),
       grant_type: 'authorization_code'
     });
     return response.data;

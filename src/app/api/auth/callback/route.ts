@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAccessToken } from '@/lib/whoop/api';
 import { storeTokenData } from '@/lib/kv';
+import {
+  getCanonicalUrl,
+  getOAuthStateCookieOptions,
+  OAUTH_STATE_COOKIE,
+  validateOAuthState,
+} from '@/lib/whoop/oauth-state';
 
 // Default user ID (for simplicity in this example)
 // In a production app, you would use a real user ID system
@@ -15,6 +21,8 @@ export async function GET(request: NextRequest) {
     // Get the authorization code from the query parameters
     const searchParams = request.nextUrl.searchParams;
     const code = searchParams.get('code');
+    const state = searchParams.get('state');
+    const storedState = request.cookies.get(OAUTH_STATE_COOKIE)?.value;
     
     // If no code is provided, return an error
     if (!code) {
@@ -23,9 +31,21 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    if (!validateOAuthState(state, storedState, request.url)) {
+      const response = NextResponse.json(
+        { error: 'Invalid authorization state' },
+        { status: 400 }
+      );
+      response.cookies.set(OAUTH_STATE_COOKIE, '', {
+        ...getOAuthStateCookieOptions(),
+        maxAge: 0,
+      });
+      return response;
+    }
     
     // Exchange the authorization code for an access token
-    const tokenData = await getAccessToken(code);
+    const tokenData = await getAccessToken(code, request.url);
     
     // Store the token data in the KV store
     await storeTokenData(DEFAULT_USER_ID, {
@@ -35,7 +55,12 @@ export async function GET(request: NextRequest) {
     });
     
     // Redirect to the success page
-    return NextResponse.redirect(new URL('/auth/success', request.url));
+    const response = NextResponse.redirect(getCanonicalUrl('/auth/success', request.url));
+    response.cookies.set(OAUTH_STATE_COOKIE, '', {
+      ...getOAuthStateCookieOptions(),
+      maxAge: 0,
+    });
+    return response;
   } catch (error) {
     console.error('Error handling auth callback:', error);
     

@@ -3,30 +3,35 @@ import { getTokenData } from '@/lib/kv';
 import * as whoopApi from '@/lib/whoop/api';
 import { processDashboardData } from '@/lib/whoop/utils';
 import { generateDashboardHtml, generateAuthHtml, generateErrorHtml } from '@/lib/template';
+import { getCanonicalUrl } from '@/lib/whoop/oauth-state';
 
 // Default user ID (for simplicity in this example)
 // In a production app, you would use a real user ID system
 const DEFAULT_USER_ID = 'default-user';
 
+function createAuthResponse(request: Request) {
+  const authUrl = getCanonicalUrl('/api/auth', request.url);
+  const html = generateAuthHtml(authUrl);
+  return new NextResponse(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html',
+    },
+  });
+}
+
 /**
  * GET handler for the dashboard endpoint
  * This is the main endpoint that TRMNL will poll
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     // Get token data from KV store
     const tokenData = await getTokenData(DEFAULT_USER_ID);
     
     // If no token data, return auth page
     if (!tokenData) {
-      const authUrl = whoopApi.getAuthUrl();
-      const html = generateAuthHtml(authUrl);
-      return new NextResponse(html, {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/html',
-        },
-      });
+      return createAuthResponse(request);
     }
     
     // Check if token is expired
@@ -50,14 +55,7 @@ export async function GET() {
       } catch (error) {
         // If refresh fails, return auth page
         console.error('Error refreshing token:', error);
-        const authUrl = whoopApi.getAuthUrl();
-        const html = generateAuthHtml(authUrl);
-        return new NextResponse(html, {
-          status: 200,
-          headers: {
-            'Content-Type': 'text/html',
-          },
-        });
+        return createAuthResponse(request);
       }
     }
     
